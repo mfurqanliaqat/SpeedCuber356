@@ -106,10 +106,21 @@ function scheduleRetry() {
   if (cfg.autoConnect && window.native) retryTimer = setTimeout(() => connect(true), 4000);
 }
 
-connectBtn.onclick = () => {
-  if (link.connected) { wantConnected = false; link.disconnect(); }
-  else connect();
+connectBtn.onclick = async () => {
+  if (!link.connected) return connect();
+  if (!(await confirmDisconnect())) return;
+  wantConnected = false;
+  link.disconnect();
 };
+
+function confirmDisconnect() {
+  const dlg = $('#disconnect-dialog');
+  $('#disconnect-text').textContent = session.mode === 'solving'
+    ? 'A solve is in progress and will be lost.'
+    : 'The app stops tracking your turns, and won’t reconnect by itself while the app is open.';
+  dlg.showModal();
+  return new Promise((resolve) => dlg.addEventListener('close', () => resolve(dlg.returnValue === 'ok'), { once: true }));
+}
 
 // ---------- Session & tabs ----------
 

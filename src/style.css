@@ -172,6 +172,7 @@ h3 { font-size: 17px; margin: 0 0 10px; color: var(--text-primary); }
 .btn:hover:not(:disabled) { filter: brightness(1.04); }
 .btn:active:not(:disabled) { transform: translateY(2px); border-bottom-width: 2px; margin-bottom: 2px; }
 .btn.primary { --b: var(--green); --b-line: var(--green-lip); --b-text: #fff; }
+.btn.danger { --b: var(--red); --b-line: var(--red-lip); --b-text: #fff; }
 .btn.icon { padding: 8px 12px; color: var(--text-secondary); }
 .btn.small { padding: 6px 12px; font-size: 12px; }
 .btn:disabled { opacity: .5; cursor: default; filter: grayscale(1); }
