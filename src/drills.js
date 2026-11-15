@@ -6,7 +6,7 @@ import { SECTIONS, TRIGGERS } from './algs.js';
 import { llSvg } from './net.js';
 import { fmt } from './stats.js';
 import { drills, learned } from './store.js';
-import { movesHtml, glow } from './ui.js';
+import { movesHtml, glow, clockLoop } from './ui.js';
 import { now } from './gan.js';
 import { game } from './game.js';
 
@@ -46,8 +46,7 @@ class DrillView {
       if (act) this.action(act);
     });
     this.$('side').addEventListener('click', (e) => this.sideClick(e));
-    const tick = () => { if (this.active) this.tick(); requestAnimationFrame(tick); };
-    requestAnimationFrame(tick);
+    this.pokeClock = clockLoop(() => { if (this.active) this.tick(); }, () => this.active && this.running());
   }
 
   show() {
@@ -55,6 +54,7 @@ class DrillView {
     this.view.setState(this.getCube().toString());
     if (!this.started) { this.started = true; this.reset(); }
     this.render();
+    this.pokeClock();
   }
 
   hide() { this.active = false; }
@@ -72,6 +72,7 @@ class DrillView {
     this.handle(face, amount, e);
     if (t && t.mistakes > before) this.view.wrong();
     this.render();
+    this.pokeClock();
   }
 
   /** Move chips, undo hints, arrows and the wrong-turn glow for one tracker. */
@@ -164,6 +165,8 @@ export class ReverseDrill extends DrillView {
     }
   }
 
+  running() { return this.phase === 'undo' && !!this.startT; }
+
   tick() {
     if (this.phase === 'undo' && this.startT) this.setClock(fmt(now() - this.startT));
     else this.setClock(this.result ? fmt(this.result.time) : '0.00', this.result && !this.result.assisted ? 'ready' : '');
@@ -253,6 +256,8 @@ export class MuscleDrill extends DrillView {
       this.newSet();
     }
   }
+
+  running() { return !!this.startT; }
 
   tick() {
     if (this.startT) this.setClock(fmt(now() - this.startT));
@@ -376,6 +381,8 @@ export class AlgDrill extends DrillView {
       }
     }
   }
+
+  running() { return this.phase === 'running'; }
 
   tick() {
     if (this.phase === 'running') this.setClock(fmt(now() - this.startT));

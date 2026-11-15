@@ -34,3 +34,21 @@ class WrongGlow {
   clear() { this.update(null, false); }
 }
 export const glow = new WrongGlow();
+
+/**
+ * Redraw a clock every frame while `live()` says it is running and only a few
+ * times a second otherwise, so a waiting timer does not keep the display busy.
+ * Returns a function that redraws right away: call it when the state changes.
+ */
+export function clockLoop(draw, live) {
+  let raf = 0, timer = 0;
+  const tick = () => {
+    cancelAnimationFrame(raf);
+    clearTimeout(timer);
+    draw();
+    if (live()) raf = requestAnimationFrame(tick);
+    else timer = setTimeout(tick, 250);
+  };
+  tick();
+  return tick;
+}

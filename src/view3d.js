@@ -43,6 +43,8 @@ function logoTexture(onReady) {
 // Tile corners in shape space, in the order roundedSquare takes their radii.
 const CORNERS = [[1, -1], [1, 1], [-1, 1], [-1, -1]];
 const ROUND = 0.34, SQUARE = 0.09;
+const HINT_FRAME_MS = 32; // arrow animation frame time
+const HINT_LIVE_MS = 12000; // arrows keep gliding this long after the last turn
 
 function roundedSquare(size, [br, tr, tl, bl]) {
   const s = size / 2, shape = new THREE.Shape();
@@ -119,6 +121,8 @@ export class CubeView {
     this.speed = speed; // ms per quarter turn
     this.state = SOLVED;
     this.anim = null;
+    this.drawnAt = 0;
+    this.wakeAt = 0;
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setPixelRatio(window.devicePixelRatio);
@@ -145,6 +149,9 @@ export class CubeView {
     this.controls.enablePan = false;
     this.controls.enableZoom = false;
     this.controls.enableDamping = true;
+    // Dragging the cube needs frames for as long as the pointer is down.
+    this.controls.addEventListener('start', () => { this.dragging = true; this.wakeAt = performance.now(); this.kick(); });
+    this.controls.addEventListener('end', () => { this.dragging = false; });
 
     this.root = new THREE.Group();
     this.scene.add(this.root);
@@ -182,7 +189,16 @@ export class CubeView {
     this.paint();
     new ResizeObserver(() => this.resize()).observe(container);
     this.resize();
-    this.renderer.setAnimationLoop((t) => this.frame(t));
+    this.kick();
+  }
+
+  // Frames are drawn on demand: anything that changes the picture sets
+  // `dirty` (or calls kick), and the loop stops by itself when all is still.
+  get dirty() { return this._dirty; }
+  set dirty(v) { this._dirty = v; if (v) this.kick(); }
+
+  kick() {
+    this.raf ??= requestAnimationFrame((t) => { this.raf = null; this.frame(t); });
   }
 
   resize() {
@@ -208,6 +224,7 @@ export class CubeView {
 
   /** Animate a turn; `facelets` is the model state after the turn. */
   turn(base, amount, facelets) {
+    this.wakeAt = performance.now();
     this.flashMove(base, amount);
     this.finish();
     const def = MOVES[base];
@@ -260,6 +277,7 @@ export class CubeView {
   /** Turn the whole cube for display (e.g. yellow on top while solving). */
   orient(name) {
     this.targetQuat.copy(ORIENTATIONS[name] || ORIENTATIONS['white-top']);
+    this.kick();
   }
 
   /**
@@ -276,6 +294,7 @@ export class CubeView {
     }
     this.hint = null;
     this.dirty = true;
+    this.wakeAt = performance.now();
     const base = move?.[0], def = MOVES[base];
     if (!def || !'URFDLB'.includes(base)) return;
     const amount = move.endsWith("'") ? 3 : move.endsWith('2') ? 2 : 1;
@@ -311,8 +330,15 @@ export class CubeView {
     this.hint = { key, group, arrows, fill, edge, geos: [fillGeo, edgeGeo] };
   }
 
-  // Only draws when something moved, so an idle cube costs almost nothing.
   frame(now) {
+    // Hidden (another tab, the net view, a closed dialog): draw nothing and
+    // stop. Showing it again resizes the stage, which asks for a fresh frame.
+    if (!this.renderer.domElement.checkVisibility({ visibilityProperty: true })) {
+      this.finish();
+      this.root.quaternion.copy(this.targetQuat);
+      this._dirty = true;
+      return;
+    }
     let dirty = this.dirty;
     this.dirty = false;
     if (this.anim) {
@@ -327,16 +353,29 @@ export class CubeView {
       this.root.quaternion.slerp(this.targetQuat, 0.15);
       if (this.root.quaternion.angleTo(this.targetQuat) < 1e-3) this.root.quaternion.copy(this.targetQuat);
     }
+    // The arrows are the only thing that moves while the cube waits for a
+    // turn, which is most of the time. A slow glide needs 30 frames a second,
+    // not the display's 120, and once nothing has happened for a while they
+    // come to rest, so a cube left on screen costs nothing at all.
     if (this.hint) {
-      // Glide a little in the turn direction and ease back; hidden while a turn animates.
-      const h = this.hint, t = (now % 1200) / 1200;
-      const push = t < 0.6 ? 1 - (1 - t / 0.6) ** 3 : 1 - ((t - 0.6) / 0.4) ** 2;
-      h.group.visible = !this.anim;
-      for (const a of h.arrows) a.position.copy(a.userData.centre).addScaledVector(a.userData.dir, 0.22 * push - 0.11);
-      h.fill.opacity = h.edge.opacity = 0.5 + 0.12 * push; // see-through so the stickers stay readable
-      dirty = true;
+      const h = this.hint, lively = now - this.wakeAt < HINT_LIVE_MS;
+      if (dirty || (lively ? now - this.drawnAt >= HINT_FRAME_MS : !h.resting)) {
+        // Glide a little in the turn direction and ease back; hidden while a turn animates.
+        const t = lively ? (now % 1200) / 1200 : 0.6;
+        const push = t < 0.6 ? 1 - (1 - t / 0.6) ** 3 : 1 - ((t - 0.6) / 0.4) ** 2;
+        h.group.visible = !this.anim;
+        for (const a of h.arrows) a.position.copy(a.userData.centre).addScaledVector(a.userData.dir, 0.22 * push - 0.11);
+        h.fill.opacity = h.edge.opacity = 0.5 + 0.12 * push; // see-through so the stickers stay readable
+        h.resting = !lively;
+        dirty = true;
+      }
     }
-    if (this.controls.update()) dirty = true;
-    if (dirty) this.renderer.render(this.scene, this.camera);
+    const moved = this.controls.update();
+    if (dirty || moved) {
+      this.drawnAt = now;
+      this.renderer.render(this.scene, this.camera);
+    }
+    const turning = this.anim || !this.root.quaternion.equals(this.targetQuat);
+    if (turning || moved || this.dragging || (this.hint && !this.hint.resting)) this.kick();
   }
 }
