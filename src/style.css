@@ -276,7 +276,7 @@ main { flex: 1; min-width: 0; height: 100%; }
 .moves span.done { opacity: .35; color: var(--text-muted); border-bottom-width: 2px; transform: translateY(2px); background: var(--surface-2); }
 .moves span.now {
   background: var(--blue-soft); color: var(--blue); border-color: var(--blue-line); border-bottom-color: var(--blue);
-  animation: key-bob 1.1s ease-in-out infinite;
+  animation: key-bob 1.1s ease-in-out 11; /* then rests, like the arrows on the cube */
 }
 @keyframes key-bob { 50% { transform: translateY(-3px); } }
 .fixes { color: var(--red); font: 900 17px var(--display); background: var(--red-soft); padding: 4px 14px; border-radius: 12px; }

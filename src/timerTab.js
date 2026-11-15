@@ -3,7 +3,7 @@ import { Cube } from './cube.js';
 import { netSvg } from './net.js';
 import { PHASES, fmt, average, best, effective, phaseAverages, phaseDurations, coachingTip, trainOf, TRAIN_LABEL } from './stats.js';
 import { TRAINING } from './session.js';
-import { movesHtml, glow } from './ui.js';
+import { movesHtml, glow, clockLoop } from './ui.js';
 import { now } from './gan.js';
 import { randomScramble } from './scramble.js';
 
@@ -93,6 +93,7 @@ export class TimerTab {
       if (!v) return;
       this.$('view-seg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
       this.$('cube-stage').classList.toggle('show-net', v === 'net');
+      this.view.dirty = true; // the hidden 3D cube stopped drawing
     });
     this.$('new-btn').onclick = () => (this.isConnected() ? session.newScramble() : this.newManualScramble());
     this.$('skip-btn').onclick = () => session.skipScramble();
@@ -116,8 +117,11 @@ export class TimerTab {
     });
 
     this.bindKeys();
-    const tick = () => { this.renderClock(); requestAnimationFrame(tick); };
-    requestAnimationFrame(tick);
+    this.pokeClock = clockLoop(() => { if (this.active) this.renderClock(); }, () => {
+      if (!this.active) return false;
+      const s = this.session;
+      return this.isConnected() ? s.mode === 'solving' && !s.paused : this.manual.state !== 'idle';
+    });
     this.render();
   }
 
@@ -211,6 +215,7 @@ export class TimerTab {
 
   render() {
     const s = this.session, connected = this.isConnected();
+    this.pokeClock();
     if (!this.view.anim) this.view.setState(s.cube.toString());
     this.view.orient(s.mode === 'solving' || s.mode === 'ready' ? this.solveView : 'white-top');
     this.$('net').innerHTML = netSvg(s.cube.toString(), GAN_SCHEME);
@@ -401,6 +406,7 @@ export class TimerTab {
   bindKeys() {
     addEventListener('keydown', (e) => {
       if (!document.querySelector('#tab-timer.active') || document.querySelector('dialog[open]')) return;
+      setTimeout(this.pokeClock); // after the manual timer's state has changed
       if (this.isConnected()) {
         if (e.key === 'Escape' && this.session.mode !== 'scramble') this.session.cancel();
         if (e.code === 'Space' && !e.repeat) { e.preventDefault(); this.session.togglePause(); }
@@ -423,6 +429,7 @@ export class TimerTab {
     addEventListener('keyup', (e) => {
       const m = this.manual;
       if (e.code !== 'Space') return;
+      setTimeout(this.pokeClock);
       if (m.state === 'holding') {
         if (now() - m.holdStart > 300) { m.state = 'running'; m.start = now(); } else m.state = 'idle';
       } else if (m.state === 'stopped') m.state = 'idle';
